@@ -1,8 +1,6 @@
 # Cheezy Savoround
 
-**Cheezy Savoround** là một tựa game giải đố thuộc thể loại Sorting/Merge với chủ đề về những lát bánh pizza. Người chơi sẽ vào vai một đầu bếp, sắp xếp và ghép các lát bánh pizza còn thiếu trên một bàn lưới (Grid 4x6) để tạo thành những đĩa bánh hoàn chỉnh.
-
-Trò chơi áp dụng các kỹ thuật thiết kế kiến trúc chuẩn mực như **Data-Driven**, **Finite State Machine (FSM)**, **Observer Pattern (Event System)**, và **Object Pooling** nhằm tối ưu hóa hiệu năng và mang lại trải nghiệm mượt mà nhất.
+**Cheezy Savoround** là một tựa game giải đố thuộc thể loại Sorting/Merge với chủ đề về những lát bánh pizza. Người chơi sẽ vào vai một đầu bếp, sắp xếp và ghép các lát bánh pizza còn thiếu trên một bàn lưới để tạo thành những đĩa bánh hoàn chỉnh.
 
 ---
 
