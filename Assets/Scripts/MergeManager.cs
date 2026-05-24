@@ -24,7 +24,7 @@ public class MergeManager : MonoBehaviour
             StartCoroutine(ProcessMergesLoop());
     }
 
-    // ─── Vòng lặp quét toàn cục ─────────────────────────────────────────────────
+    // Global Processing Loop
 
     private IEnumerator ProcessMergesLoop()
     {
@@ -42,7 +42,7 @@ public class MergeManager : MonoBehaviour
         _isProcessing = false;
     }
 
-    // ─── Tìm nước đi tối ưu nhất (Quét chuẩn 1 chiều) ───────────────────────────
+    // Find Best Move (Single-Direction Scan)
 
     private MoveResult FindBestMove()
     {
@@ -61,8 +61,8 @@ public class MergeManager : MonoBehaviour
                 PizzaPlate neighbor = neighborCell.currentPlate.GetComponent<PizzaPlate>();
                 if (neighbor == null) continue;
 
-                // CHỈ XÉT MỘT CHIỀU xuôi từ đĩa hiện tại sang hàng xóm.
-                // Chiều ngược lại tự động tính khi vòng lặp duyệt tới neighborCell.
+                // Only consider one direction from current plate to neighbor.
+                // The reverse direction will be handled when the loop reaches the neighbor cell.
                 EvaluatePair(plate, neighbor, ref best);
             }
         }
@@ -73,7 +73,7 @@ public class MergeManager : MonoBehaviour
     private void EvaluatePair(PizzaPlate sender, PizzaPlate receiver, ref MoveResult best)
     {
         if (receiver.IsFull) return;
-        if (receiver.SliceCount == 0) return; // Chặn đĩa đang chờ hủy biến mất
+        if (receiver.SliceCount == 0) return; // Block plates waiting to be cleared
 
         foreach (string type in sender.GetTypesPresent())
         {
@@ -88,29 +88,29 @@ public class MergeManager : MonoBehaviour
         }
     }
 
-    // ─── Bảng Tính Điểm Chuẩn Hóa Chống Xung Đột Quy Tắc ───────────────────────
+    // Priority Calculation Table (Conflict-Free Rule-Based Scoring)
 
     private int CalcPriority(PizzaPlate sender, PizzaPlate receiver, string type)
     {
         bool receiverHasType = receiver.GetCountByType(type) > 0;
 
-        // Bậc 300+: Ăn điểm hoàn thành đĩa
+        // 300+: Complete the plate
         int completionScore = CompletionScore(sender, receiver, type);
         if (completionScore > 0) return completionScore;
 
-        // Bậc 200: Đĩa mới đặt + có chung màu
+        // 200: Newly placed plate + same color
         if (receiver == _lastPlacedPlate && receiverHasType) return 200;
 
-        // Bậc 100: Bóc tách đĩa tạp (Color Separation)
+        // 100: Color Separation
         if (WillReduceSenderColors(sender, receiver, type)) return 100;
 
-        // Bậc 50: Gom nhóm thông thường (Consolidation)
+        // 50: Consolidation
         if (receiverHasType)
         {
             int slotsEmpty = 6 - receiver.SliceCount;
             int senderHas = sender.GetCountByType(type);
 
-            // BẢO VỆ CẤU TRÚC: Đĩa nhận phải có đủ chỗ trống lấy HẾT màu này từ đĩa gửi
+            // STRUCTURE PROTECTION: The receiving plate must have enough empty slots to take ALL of this color from the sending plate
             if (slotsEmpty >= senderHas && senderHas > 0)
             {
                 return 50;
@@ -136,25 +136,25 @@ public class MergeManager : MonoBehaviour
 
     private bool WillReduceSenderColors(PizzaPlate sender, PizzaPlate receiver, string type)
     {
-        // Điều kiện dọn sạch: sender chỉ còn đúng 1 slice màu này và đang mix nhiều màu
+        // Condition for clearing: sender has only 1 slice of this color and is mixing multiple colors
         bool canReduce = sender.GetCountByType(type) == 1 && sender.GetTypesPresent().Count > 1;
         if (!canReduce) return false;
 
-        // Chỉ dọn màu sang nếu đĩa nhận cũng đang gom loại màu này
+        // Only move color to receiver if the receiver is also collecting this color
         return receiver.GetCountByType(type) > 0;
     }
 
-    // ─── Thực thi nước đi: Di chuyển hàng loạt bảo toàn dữ liệu ─────────────────
+    // Execute Move (Batch Move)
 
     private void ExecuteMove(MoveResult move)
     {
         int slotsEmpty = 6 - move.Receiver.SliceCount;
         int senderHas = move.Sender.GetCountByType(move.SliceType);
 
-        // Tính toán số lượng tối đa có thể gom đi trong 1 hành động
+        // Calculate the maximum number of slices that can be moved in one action
         int amountToMove = Mathf.Min(slotsEmpty, senderHas);
 
-        // Chuyển toàn bộ số lượng hợp lệ ngay lập tức
+        // Move all valid slices at once
         for (int i = 0; i < amountToMove; i++)
         {
             PizzaSlice slice = move.Sender.RemoveSliceByType(move.SliceType);
@@ -163,7 +163,7 @@ public class MergeManager : MonoBehaviour
             move.Receiver.AddSlice(slice);
         }
 
-        // Sau khi đồng bộ dữ liệu xong mới kiểm tra dọn đĩa an toàn
+        // Check and clear plates after data synchronization
         CheckAndClear(move.Sender);
         CheckAndClear(move.Receiver);
     }
@@ -175,7 +175,7 @@ public class MergeManager : MonoBehaviour
             plate.ClearPlate();
     }
 
-    // ─── Bộ So Sánh Tie-Break (Ưu tiên đĩa Mix lên hàng đầu) ─────────────────────
+    // Tie-Break Comparison (Prioritize Mixed Plates)
 
     private class MoveResult
     {
@@ -197,7 +197,7 @@ public class MergeManager : MonoBehaviour
             if (Priority != other.Priority)
                 return Priority > other.Priority;
 
-            // ĐẶC BIỆT: Ưu tiên lọc đĩa MIX (nhiều màu) trước để dọn sạch bàn cờ
+            // SPECIAL: Prioritize filtering MIX plates (multiple colors) first to clear the board
             int thisSenderTypes = Sender.GetTypesPresent().Count;
             int otherSenderTypes = other.Sender.GetTypesPresent().Count;
             if (thisSenderTypes != otherSenderTypes)
