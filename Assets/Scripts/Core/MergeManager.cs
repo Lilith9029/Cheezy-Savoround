@@ -30,16 +30,71 @@ public class MergeManager : MonoBehaviour
     {
         _isProcessing = true;
 
+        // Reset combo audio count at the start of a new placement turn
+        if (ComboAudioPlayer.Instance != null)
+            ComboAudioPlayer.Instance.ResetCombo();
+
+        // Change state to CheckingCombo when loop begins
+        if (GameManager.Instance != null)
+            GameManager.Instance.ChangeState(GameState.CheckingCombo);
+
         while (true)
         {
             MoveResult best = FindBestMove();
             if (best == null) break;
 
+            // Change state to Animating during execution
+            if (GameManager.Instance != null)
+                GameManager.Instance.ChangeState(GameState.Animating);
+
+            // Execute the data move first
             ExecuteMove(best);
-            yield return new WaitForSeconds(0.15f);
+            
+            // Wait for Bezier animation to finish BEFORE checking/clearing
+            // (0.35s Bezier + small buffer = 0.45s to be safe)
+            yield return new WaitForSeconds(0.45f);
+
+            // Now safe to check and clear plates after animation has landed
+            CheckAndClear(best.Sender);
+            CheckAndClear(best.Receiver);
+
+            // Small pause to let clear VFX register before scanning again
+            yield return new WaitForSeconds(0.05f);
+
+            if (GameManager.Instance != null)
+                GameManager.Instance.ChangeState(GameState.CheckingCombo);
         }
 
         _isProcessing = false;
+
+        // Check if game is over
+        CheckGameOver();
+
+        // If not Game Over, return to Playing state
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.GameOver)
+        {
+            GameManager.Instance.ChangeState(GameState.Playing);
+        }
+    }
+
+    private void CheckGameOver()
+    {
+        // If there is at least one free cell, the game is not over
+        Cell[] allCells = FindObjectsByType<Cell>(FindObjectsSortMode.None);
+        foreach (Cell cell in allCells)
+        {
+            if (cell != null && !cell.IsOccupied)
+            {
+                return;
+            }
+        }
+
+        // If the grid is completely full and no automatic merges can be executed, trigger Game Over
+        Debug.LogWarning("[MergeManager] Grid is fully occupied with no merges left! Game Over.");
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.ChangeState(GameState.GameOver);
+        }
     }
 
     // Find Best Move (Single-Direction Scan)
@@ -52,14 +107,16 @@ public class MergeManager : MonoBehaviour
         foreach (Cell cell in allCells)
         {
             if (!cell.IsOccupied) continue;
+            if (cell.currentPlate == null) continue; // may have been cleared this frame
             PizzaPlate plate = cell.currentPlate.GetComponent<PizzaPlate>();
-            if (plate == null) continue;
+            if (plate == null || plate.IsBeingCleared) continue;
 
             foreach (Cell neighborCell in _gridManager.GetNeighbors(cell.x, cell.z))
             {
                 if (!neighborCell.IsOccupied) continue;
+                if (neighborCell.currentPlate == null) continue;
                 PizzaPlate neighbor = neighborCell.currentPlate.GetComponent<PizzaPlate>();
-                if (neighbor == null) continue;
+                if (neighbor == null || neighbor.IsBeingCleared) continue;
 
                 // Only consider one direction from current plate to neighbor.
                 // The reverse direction will be handled when the loop reaches the neighbor cell.
@@ -72,6 +129,9 @@ public class MergeManager : MonoBehaviour
 
     private void EvaluatePair(PizzaPlate sender, PizzaPlate receiver, ref MoveResult best)
     {
+        // Skip plates that are in the process of being destroyed
+        if (sender == null || sender.IsBeingCleared) return;
+        if (receiver == null || receiver.IsBeingCleared) return;
         if (receiver.IsFull) return;
         if (receiver.SliceCount == 0) return; // Block plates waiting to be cleared
 
@@ -97,9 +157,6 @@ public class MergeManager : MonoBehaviour
         // 300+: Complete the plate
         int completionScore = CompletionScore(sender, receiver, type);
         if (completionScore > 0) return completionScore;
-
-        // 200: Newly placed plate + same color
-        if (receiver == _lastPlacedPlate && receiverHasType) return 200;
 
         // 100: Color Separation
         if (WillReduceSenderColors(sender, receiver, type)) return 100;
@@ -148,6 +205,10 @@ public class MergeManager : MonoBehaviour
 
     private void ExecuteMove(MoveResult move)
     {
+        // Safety check: plates might have been cleared between FindBestMove and ExecuteMove
+        if (move.Sender == null || move.Sender.IsBeingCleared) return;
+        if (move.Receiver == null || move.Receiver.IsBeingCleared) return;
+
         int slotsEmpty = 6 - move.Receiver.SliceCount;
         int senderHas = move.Sender.GetCountByType(move.SliceType);
 
@@ -162,15 +223,12 @@ public class MergeManager : MonoBehaviour
 
             move.Receiver.AddSlice(slice);
         }
-
-        // Check and clear plates after data synchronization
-        CheckAndClear(move.Sender);
-        CheckAndClear(move.Receiver);
+        // NOTE: CheckAndClear is now called AFTER the animation delay in ProcessMergesLoop
     }
 
     private void CheckAndClear(PizzaPlate plate)
     {
-        if (plate == null) return;
+        if (plate == null || plate.IsBeingCleared) return;
         if (plate.SliceCount == 0 || (plate.IsFull && plate.IsAllSameType()))
             plate.ClearPlate();
     }
