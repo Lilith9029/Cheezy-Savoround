@@ -1,0 +1,26 @@
+{
+  "achievements": [
+    { "id": "bloom_pizzas_10",   "title": "Pizza Rookie",    "description": "Clear 10 pizza plates",    "targetValue": 10,   "reward": 50  },
+    { "id": "bloom_pizzas_50",   "title": "Pizza Chef",      "description": "Clear 50 pizza plates",    "targetValue": 50,   "reward": 100 },
+    { "id": "bloom_pizzas_100",  "title": "Pizza Master",    "description": "Clear 100 pizza plates",   "targetValue": 100,  "reward": 200 },
+    { "id": "bloom_pizzas_500",  "title": "Pizza Legend",    "description": "Clear 500 pizza plates",   "targetValue": 500,  "reward": 500 },
+
+    { "id": "earn_gold_500",     "title": "Coin Collector",  "description": "Accumulate 500 gold",      "targetValue": 500,  "reward": 50  },
+    { "id": "earn_gold_1000",    "title": "Gold Digger",     "description": "Accumulate 1000 gold",     "targetValue": 1000, "reward": 100 },
+    { "id": "earn_gold_5000",    "title": "Millionaire",     "description": "Accumulate 5000 gold",     "targetValue": 5000, "reward": 300 },
+
+    { "id": "max_combo_3",       "title": "Combo Starter",   "description": "Achieve a x3 combo",       "targetValue": 3,    "reward": 50  },
+    { "id": "max_combo_5",       "title": "Combo King",      "description": "Achieve a x5 combo",       "targetValue": 5,    "reward": 100 },
+    { "id": "max_combo_10",      "title": "Combo God",       "description": "Achieve a x10 combo",      "targetValue": 10,   "reward": 300 },
+
+    { "id": "reach_level_5",     "title": "Getting Warmed Up", "description": "Reach level 5",          "targetValue": 5,    "reward": 100 },
+    { "id": "reach_level_10",    "title": "Veteran",         "description": "Reach level 10",           "targetValue": 10,   "reward": 200 },
+    { "id": "reach_level_25",    "title": "Elite Chef",      "description": "Reach level 25",           "targetValue": 25,   "reward": 500 },
+
+    { "id": "use_booster_10",    "title": "Tool User",       "description": "Use boosters 10 times",    "targetValue": 10,   "reward": 100 },
+    { "id": "use_booster_50",    "title": "Tool Master",     "description": "Use boosters 50 times",    "targetValue": 50,   "reward": 300 },
+
+    { "id": "daily_streak_3",    "title": "Consistent",      "description": "Claim daily reward 3 days in a row",  "targetValue": 3,  "reward": 100 },
+    { "id": "daily_streak_7",    "title": "Dedicated",       "description": "Claim daily reward 7 days in a row",  "targetValue": 7,  "reward": 300 }
+  ]
+}

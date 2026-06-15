@@ -5,19 +5,34 @@ public class ComboAudioPlayer : MonoBehaviour
 {
     public static ComboAudioPlayer Instance { get; private set; }
 
-    [Header("Audio Settings")]
+    [Header("Clear Sound")]
     [SerializeField] private AudioClip clearSound;
-    [Range(0f, 1f)] [SerializeField] private float volume = 0.8f;
-    [SerializeField] private float pitchStep = 0.08f; // Pitch increase per combo step
-    [SerializeField] private float maxPitch = 1.8f;   // Maximum allowed pitch
+    [Range(0f, 1f)][SerializeField] private float volume = 0.8f;
+    [SerializeField] private float pitchStep = 0.08f;
+    [SerializeField] private float maxPitch = 1.8f;
+
+    [Header("Slice Move Sound")]
+    [SerializeField] private AudioClip sliceMoveSound;
+    [Range(0f, 1f)][SerializeField] private float sliceMoveVolume = 0.5f;
+
+    [Header("Place Sound")]
+    [SerializeField] private AudioClip placeSound;
+    [Range(0f, 1f)][SerializeField] private float placeSoundVolume = 0.6f;
 
     private AudioSource _audioSource;
     private int _comboCount = 0;
+
+    public static event System.Action<int> OnComboAchieved;
 
     private void Awake()
     {
         if (Instance == null)
         {
+            Instance = this;
+        }
+        else if (clearSound != null && Instance.clearSound == null)
+        {
+            Destroy(Instance.gameObject);
             Instance = this;
         }
         else
@@ -28,39 +43,39 @@ public class ComboAudioPlayer : MonoBehaviour
 
         _audioSource = GetComponent<AudioSource>();
         _audioSource.playOnAwake = false;
-        _audioSource.spatialBlend = 0f; // Play as 2D sound for maximum clarity
+        _audioSource.spatialBlend = 0f;
     }
 
-    /// <summary>
-    /// Resets the combo step back to 0, restoring the default pitch.
-    /// Called at the start of a player's placement turn.
-    /// </summary>
     public void ResetCombo()
     {
         _comboCount = 0;
-        Debug.Log("[ComboAudio] Combo count reset to 0.");
     }
 
-    /// <summary>
-    /// Plays the clear sound effect with a pitch value that increases with each consecutive combo.
-    /// </summary>
     public void PlayExplosionWithCombo()
     {
-        if (clearSound == null)
-        {
-            Debug.LogWarning("[ComboAudioPlayer] Clear sound clip is missing!");
-            return;
-        }
+        if (clearSound == null) return;
 
         _comboCount++;
-        
-        // Calculate new pitch: starts at 1.0f + (comboCount * pitchStep)
         float currentPitch = 1f + (_comboCount - 1) * pitchStep;
         currentPitch = Mathf.Min(currentPitch, maxPitch);
 
         _audioSource.pitch = currentPitch;
         _audioSource.PlayOneShot(clearSound, volume);
-        
-        Debug.Log($"[ComboAudio] Playing explosion sound. Combo: {_comboCount}, Pitch: {currentPitch:F2}");
+
+        OnComboAchieved?.Invoke(_comboCount);
+    }
+
+    public void PlaySliceMove()
+    {
+        if (sliceMoveSound == null) return;
+        _audioSource.pitch = 1f;
+        _audioSource.PlayOneShot(sliceMoveSound, sliceMoveVolume);
+    }
+
+    public void PlayPlaceSound()
+    {
+        if (placeSound == null) return;
+        _audioSource.pitch = 1f;
+        _audioSource.PlayOneShot(placeSound, placeSoundVolume);
     }
 }

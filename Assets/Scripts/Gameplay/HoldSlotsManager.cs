@@ -17,11 +17,23 @@ public class HoldSlotsManager : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
+            return;
         }
-        else
+
+        // Prefer the manager that actually has hold slots wired in the Inspector
+        if (HasConfiguredSlots() && !Instance.HasConfiguredSlots())
         {
-            Destroy(gameObject);
+            Destroy(Instance.gameObject);
+            Instance = this;
+            return;
         }
+
+        Destroy(gameObject);
+    }
+
+    private bool HasConfiguredSlots()
+    {
+        return holdSlots != null && holdSlots.Count > 0 && holdSlots[0] != null;
     }
 
     private void Start()
@@ -31,8 +43,7 @@ public class HoldSlotsManager : MonoBehaviour
             plateSpawner = FindFirstObjectByType<PlateSpawner>();
         }
 
-        // Initially fill all slots
-        RefillAllSlots();
+        // Do not RefillAllSlots on Start anymore as we start in the Main Menu
     }
 
     /// <summary>
@@ -53,7 +64,6 @@ public class HoldSlotsManager : MonoBehaviour
 
         if (allEmpty)
         {
-            Debug.Log("[HoldSlots] All slots empty! Refilling...");
             RefillAllSlots();
         }
     }
@@ -65,7 +75,6 @@ public class HoldSlotsManager : MonoBehaviour
     {
         if (plateSpawner == null)
         {
-            Debug.LogError("[HoldSlotsManager] PlateSpawner reference is missing!");
             return;
         }
 
@@ -78,6 +87,24 @@ public class HoldSlotsManager : MonoBehaviour
                 {
                     slot.AssignPlate(newPlate);
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Destroys all plates currently stored in hold slots.
+    /// </summary>
+    public void ClearAllSlots()
+    {
+        foreach (var slot in holdSlots)
+        {
+            if (slot != null && !slot.IsEmpty)
+            {
+                if (slot.CurrentPlate != null)
+                {
+                    Destroy(slot.CurrentPlate);
+                }
+                slot.ClearSlot();
             }
         }
     }

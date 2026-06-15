@@ -6,14 +6,38 @@ public class DraggablePlate : MonoBehaviour
     [Tooltip("How close (in world units) the plate needs to be to a cell to snap")]
     [SerializeField] private float snapDistance = 1.5f;
 
+    [Tooltip("How many world units to lift the plate above its resting Y while dragging (prevents tiles from covering it)")]
+    [SerializeField] private float dragLiftOffset = 0.3f;
+
     [HideInInspector] public HoldSlot parentSlot; // Reference to the slot this plate was spawned in
 
-    private bool isDragging = false;
+    private bool    isDragging = false;
+
+    public bool IsDragging => isDragging;
+
+    private static int _activeDragCount = 0;
+
+    public static bool IsAnyDragging()
+    {
+        return _activeDragCount > 0;
+    }
+
+    public static void CancelAllActiveDrags()
+    {
+        DraggablePlate[] plates = FindObjectsByType<DraggablePlate>(FindObjectsSortMode.None);
+        foreach (DraggablePlate plate in plates)
+        {
+            if (plate != null && plate.isDragging) plate.CancelDrag();
+        }
+        _activeDragCount = 0; // Force reset to prevent drift
+        if (GhostPlatePreview.Instance != null) GhostPlatePreview.Instance.Hide();
+    }
     private Vector3 originalPosition;
+    private float   _liftedY;          // Y used during drag (originalPosition.y + dragLiftOffset)
     private GridManager gridManager;
     private MergeManager mergeManager;
     private Camera mainCamera;
-    private Plane dragPlane;
+    private Plane  dragPlane;
 
     private void Start()
     {
@@ -50,7 +74,12 @@ public class DraggablePlate : MonoBehaviour
     /// <summary>Cancels a drag in progress without snap — returns to original position silently.</summary>
     private void CancelDrag()
     {
-        isDragging = false;
+        StopAllCoroutines();
+        if (isDragging)
+        {
+            isDragging = false;
+            _activeDragCount--;
+        }
         if (GhostPlatePreview.Instance != null) GhostPlatePreview.Instance.Hide();
         transform.position = originalPosition;
     }
@@ -66,10 +95,19 @@ public class DraggablePlate : MonoBehaviour
 
         if (col.Raycast(ray, out RaycastHit _, 500f))
         {
-            Debug.Log($"[INPUT] PICK: {gameObject.name}");
-            isDragging = true;
+            if (!isDragging)
+            {
+                isDragging = true;
+                _activeDragCount++;
+            }
             originalPosition = transform.position;
-            dragPlane = new Plane(Vector3.up, new Vector3(0, transform.position.y, 0));
+
+            // Lift the plate above tile level while dragging so tiles don't cover it
+            _liftedY  = originalPosition.y + dragLiftOffset;
+            dragPlane = new Plane(Vector3.up, new Vector3(0, _liftedY, 0));
+
+            // Snap plate up immediately on pickup
+            transform.position = new Vector3(transform.position.x, _liftedY, transform.position.z);
         }
     }
 
@@ -79,7 +117,8 @@ public class DraggablePlate : MonoBehaviour
         if (dragPlane.Raycast(ray, out float dist))
         {
             Vector3 worldPoint = ray.GetPoint(dist);
-            transform.position = new Vector3(worldPoint.x, transform.position.y, worldPoint.z);
+            // Keep the plate at the lifted Y while dragging
+            transform.position = new Vector3(worldPoint.x, _liftedY, worldPoint.z);
             
             // Check for nearest cell for snap preview
             Cell nearestCell = gridManager.GetNearestCell(transform.position, snapDistance);
@@ -89,7 +128,7 @@ public class DraggablePlate : MonoBehaviour
                 {
                     // Show ghost at the height of the current plate
                     Vector3 previewPos = new Vector3(nearestCell.transform.position.x, originalPosition.y, nearestCell.transform.position.z);
-                    GhostPlatePreview.Instance.Show(previewPos, gameObject);
+                    GhostPlatePreview.Instance.Show(previewPos, gameObject, nearestCell);
                 }
             }
             else
@@ -101,7 +140,11 @@ public class DraggablePlate : MonoBehaviour
 
     private void Drop()
     {
-        isDragging = false;
+        if (isDragging)
+        {
+            isDragging = false;
+            _activeDragCount--;
+        }
         
         if (GhostPlatePreview.Instance != null) GhostPlatePreview.Instance.Hide();
         
@@ -112,7 +155,6 @@ public class DraggablePlate : MonoBehaviour
         {
             if (!nearestCell.IsOccupied)
             {
-                Debug.Log($"[INPUT] DROP: {gameObject.name} -> VALID: Cell({nearestCell.x}, {nearestCell.z})");
                 transform.position = new Vector3(
                     nearestCell.transform.position.x,
                     originalPosition.y,
@@ -126,7 +168,10 @@ public class DraggablePlate : MonoBehaviour
                 {
                     pizzaPlate.PlayBounceAnimation();
                 }
-                
+
+                if (ComboAudioPlayer.Instance != null)
+                    ComboAudioPlayer.Instance.PlayPlaceSound();
+
                 // Free the Hold Slot this was dragged from
                 if (parentSlot != null)
                 {
@@ -145,7 +190,6 @@ public class DraggablePlate : MonoBehaviour
             }
             else
             {
-                Debug.Log($"[INPUT] DROP: {gameObject.name} -> INVALID: Cell Occupied. Target Plate shakes.");
                 PizzaPlate occupiedPlate = nearestCell.currentPlate.GetComponent<PizzaPlate>();
                 if (occupiedPlate != null)
                 {
@@ -156,7 +200,6 @@ public class DraggablePlate : MonoBehaviour
         }
         else
         {
-            Debug.Log($"[INPUT] DROP: {gameObject.name} -> INVALID: Out of bounds. Returning.");
             StartCoroutine(ReturnToOriginalRoutine());
         }
     }
@@ -178,5 +221,14 @@ public class DraggablePlate : MonoBehaviour
         }
 
         transform.position = originalPosition;
+    }
+
+    private void OnDestroy()
+    {
+        if (isDragging)
+        {
+            isDragging = false;
+            _activeDragCount--;
+        }
     }
 }

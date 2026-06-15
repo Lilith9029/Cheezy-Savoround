@@ -7,6 +7,9 @@ public class MergeManager : MonoBehaviour
     private GridManager _gridManager;
     private bool _isProcessing = false;
     private PizzaPlate _lastPlacedPlate;
+    private readonly string[] _uniqueTypesBuffer = new string[6];
+
+    public bool IsProcessing => _isProcessing;
 
     private void Start()
     {
@@ -67,7 +70,8 @@ public class MergeManager : MonoBehaviour
 
         _isProcessing = false;
 
-        // Check if game is over
+        yield return new WaitForSeconds(0.35f);
+
         CheckGameOver();
 
         // If not Game Over, return to Playing state
@@ -80,17 +84,19 @@ public class MergeManager : MonoBehaviour
     private void CheckGameOver()
     {
         // If there is at least one free cell, the game is not over
-        Cell[] allCells = FindObjectsByType<Cell>(FindObjectsSortMode.None);
-        foreach (Cell cell in allCells)
+        if (_gridManager == null) _gridManager = FindFirstObjectByType<GridManager>();
+        if (_gridManager != null && _gridManager.AllCells != null)
         {
-            if (cell != null && !cell.IsOccupied)
+            foreach (Cell cell in _gridManager.AllCells)
             {
-                return;
+                if (cell != null && !cell.IsOccupied)
+                {
+                    return;
+                }
             }
         }
 
         // If the grid is completely full and no automatic merges can be executed, trigger Game Over
-        Debug.LogWarning("[MergeManager] Grid is fully occupied with no merges left! Game Over.");
         if (GameManager.Instance != null)
         {
             GameManager.Instance.ChangeState(GameState.GameOver);
@@ -101,11 +107,17 @@ public class MergeManager : MonoBehaviour
 
     private MoveResult FindBestMove()
     {
-        MoveResult best = null;
-        Cell[] allCells = FindObjectsByType<Cell>(FindObjectsSortMode.None);
+        PizzaPlate bestSender = null;
+        PizzaPlate bestReceiver = null;
+        string bestSliceType = null;
+        int bestPriority = -1;
 
-        foreach (Cell cell in allCells)
+        if (_gridManager == null) _gridManager = FindFirstObjectByType<GridManager>();
+        if (_gridManager == null || _gridManager.AllCells == null) return null;
+
+        foreach (Cell cell in _gridManager.AllCells)
         {
+            if (cell == null) continue;
             if (!cell.IsOccupied) continue;
             if (cell.currentPlate == null) continue; // may have been cleared this frame
             PizzaPlate plate = cell.currentPlate.GetComponent<PizzaPlate>();
@@ -113,21 +125,25 @@ public class MergeManager : MonoBehaviour
 
             foreach (Cell neighborCell in _gridManager.GetNeighbors(cell.x, cell.z))
             {
+                if (neighborCell == null) continue;
                 if (!neighborCell.IsOccupied) continue;
                 if (neighborCell.currentPlate == null) continue;
                 PizzaPlate neighbor = neighborCell.currentPlate.GetComponent<PizzaPlate>();
                 if (neighbor == null || neighbor.IsBeingCleared) continue;
 
                 // Only consider one direction from current plate to neighbor.
-                // The reverse direction will be handled when the loop reaches the neighbor cell.
-                EvaluatePair(plate, neighbor, ref best);
+                EvaluatePair(plate, neighbor, ref bestSender, ref bestReceiver, ref bestSliceType, ref bestPriority);
             }
         }
 
-        return best;
+        if (bestSender != null)
+        {
+            return new MoveResult(bestSender, bestReceiver, bestSliceType, bestPriority);
+        }
+        return null;
     }
 
-    private void EvaluatePair(PizzaPlate sender, PizzaPlate receiver, ref MoveResult best)
+    private void EvaluatePair(PizzaPlate sender, PizzaPlate receiver, ref PizzaPlate bestSender, ref PizzaPlate bestReceiver, ref string bestSliceType, ref int bestPriority)
     {
         // Skip plates that are in the process of being destroyed
         if (sender == null || sender.IsBeingCleared) return;
@@ -135,17 +151,43 @@ public class MergeManager : MonoBehaviour
         if (receiver.IsFull) return;
         if (receiver.SliceCount == 0) return; // Block plates waiting to be cleared
 
-        foreach (string type in sender.GetTypesPresent())
+        int typeCount = sender.GetUniqueTypesNonAlloc(_uniqueTypesBuffer);
+        for (int i = 0; i < typeCount; i++)
         {
+            string type = _uniqueTypesBuffer[i];
             if (sender.GetCountByType(type) == 0) continue;
 
             int priority = CalcPriority(sender, receiver, type);
             if (priority < 0) continue;
 
-            var candidate = new MoveResult(sender, receiver, type, priority);
-            if (best == null || candidate.IsBetterThan(best, _lastPlacedPlate))
-                best = candidate;
+            if (IsCandidateBetter(sender, receiver, type, priority, bestSender, bestReceiver, bestSliceType, bestPriority))
+            {
+                bestSender = sender;
+                bestReceiver = receiver;
+                bestSliceType = type;
+                bestPriority = priority;
+            }
         }
+    }
+
+    private bool IsCandidateBetter(PizzaPlate sender, PizzaPlate receiver, string sliceType, int priority,
+                                   PizzaPlate bestSender, PizzaPlate bestReceiver, string bestSliceType, int bestPriority)
+    {
+        if (bestSender == null) return true;
+
+        if (priority != bestPriority)
+            return priority > bestPriority;
+
+        int thisSenderTypes = sender.GetUniqueTypesCount();
+        int bestSenderTypes = bestSender.GetUniqueTypesCount();
+        if (thisSenderTypes != bestSenderTypes)
+            return thisSenderTypes > bestSenderTypes;
+
+        bool thisNew = (receiver == _lastPlacedPlate);
+        bool bestNew = (bestReceiver == _lastPlacedPlate);
+        if (thisNew != bestNew) return thisNew;
+
+        return receiver.GetCountByType(sliceType) > bestReceiver.GetCountByType(bestSliceType);
     }
 
     // Priority Calculation Table (Conflict-Free Rule-Based Scoring)
@@ -194,7 +236,7 @@ public class MergeManager : MonoBehaviour
     private bool WillReduceSenderColors(PizzaPlate sender, PizzaPlate receiver, string type)
     {
         // Condition for clearing: sender has only 1 slice of this color and is mixing multiple colors
-        bool canReduce = sender.GetCountByType(type) == 1 && sender.GetTypesPresent().Count > 1;
+        bool canReduce = sender.GetCountByType(type) == 1 && sender.GetUniqueTypesCount() > 1;
         if (!canReduce) return false;
 
         // Only move color to receiver if the receiver is also collecting this color
@@ -215,6 +257,9 @@ public class MergeManager : MonoBehaviour
         // Calculate the maximum number of slices that can be moved in one action
         int amountToMove = Mathf.Min(slotsEmpty, senderHas);
 
+        if (amountToMove > 0 && ComboAudioPlayer.Instance != null)
+            ComboAudioPlayer.Instance.PlaySliceMove();
+
         // Move all valid slices at once
         for (int i = 0; i < amountToMove; i++)
         {
@@ -229,11 +274,18 @@ public class MergeManager : MonoBehaviour
     private void CheckAndClear(PizzaPlate plate)
     {
         if (plate == null || plate.IsBeingCleared) return;
-        if (plate.SliceCount == 0 || (plate.IsFull && plate.IsAllSameType()))
-            plate.ClearPlate();
+
+        if (plate.IsFull && plate.IsAllSameType())
+        {
+            plate.ClearPlate(true);
+        }
+        else if (plate.SliceCount == 0)
+        {
+            plate.ClearPlate(false);
+        }
     }
 
-    // Tie-Break Comparison (Prioritize Mixed Plates)
+    // MoveResult Helper
 
     private class MoveResult
     {
@@ -249,23 +301,63 @@ public class MergeManager : MonoBehaviour
             SliceType = type;
             Priority = priority;
         }
+    }
 
-        public bool IsBetterThan(MoveResult other, PizzaPlate lastPlaced)
+    /// <summary>
+    /// Stops the merge loop immediately (used before restart).
+    /// </summary>
+    public void CancelProcessing()
+    {
+        StopAllCoroutines();
+        _isProcessing = false;
+    }
+
+    /// <summary>
+    /// Deletes up to 3 random plates from the grid, allowing the player to resume.
+    /// </summary>
+    public void DeleteThreeRandomPlates()
+    {
+        if (_gridManager == null) _gridManager = FindFirstObjectByType<GridManager>();
+        if (_gridManager == null || _gridManager.AllCells == null) return;
+        List<Cell> occupiedCells = new List<Cell>();
+        
+        foreach (Cell cell in _gridManager.AllCells)
         {
-            if (Priority != other.Priority)
-                return Priority > other.Priority;
+            if (cell != null && cell.IsOccupied)
+            {
+                occupiedCells.Add(cell);
+            }
+        }
 
-            // SPECIAL: Prioritize filtering MIX plates (multiple colors) first to clear the board
-            int thisSenderTypes = Sender.GetTypesPresent().Count;
-            int otherSenderTypes = other.Sender.GetTypesPresent().Count;
-            if (thisSenderTypes != otherSenderTypes)
-                return thisSenderTypes > otherSenderTypes;
+        int countToDelete = Mathf.Min(3, occupiedCells.Count);
+        for (int i = 0; i < countToDelete; i++)
+        {
+            int randomIndex = Random.Range(0, occupiedCells.Count);
+            Cell targetCell = occupiedCells[randomIndex];
+            occupiedCells.RemoveAt(randomIndex);
 
-            bool thisNew = (Receiver == lastPlaced);
-            bool otherNew = (other.Receiver == lastPlaced);
-            if (thisNew != otherNew) return thisNew;
+            if (targetCell.currentPlate != null)
+            {
+                if (ObjectPooler.Instance != null)
+                {
+                    ObjectPooler.Instance.SpawnFromPool("PizzaExplosion", targetCell.currentPlate.transform.position, Quaternion.identity);
+                }
+                
+                Destroy(targetCell.currentPlate);
+                targetCell.currentPlate = null;
+            }
+        }
 
-            return Receiver.GetCountByType(SliceType) > other.Receiver.GetCountByType(other.SliceType);
+        // Refill hold slots if they are empty
+        if (HoldSlotsManager.Instance != null)
+        {
+            HoldSlotsManager.Instance.CheckAndRefillSlots();
+        }
+
+        // Switch state back to Playing
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.ChangeState(GameState.Playing);
         }
     }
 }

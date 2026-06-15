@@ -30,7 +30,6 @@ public class PlateSpawner : MonoBehaviour
     {
         if (spawnPoints == null || spawnPoints.Length == 0)
         {
-            Debug.LogWarning("No spawn points assigned for testing in PlateSpawner.");
             return;
         }
         Transform spawnPoint = spawnPoints[Random.Range(0, spawnPoints.Length)];
@@ -48,11 +47,14 @@ public class PlateSpawner : MonoBehaviour
     {
         if (platePrefab == null || pizzaSlicePrefabs == null || pizzaSlicePrefabs.Length == 0)
         {
-            Debug.LogWarning("Please assign prefabs in PlateSpawner!");
             return null;
         }
 
         GameObject newPlate = Instantiate(platePrefab, Vector3.zero, Quaternion.identity);
+        if (newPlate.GetComponent<PlateSkin>() == null)
+        {
+            newPlate.AddComponent<PlateSkin>();
+        }
         PizzaPlate plateScript = newPlate.GetComponent<PizzaPlate>();
 
         if (plateScript != null)
@@ -77,7 +79,17 @@ public class PlateSpawner : MonoBehaviour
 
                 for (int i = 0; i < countForThisType; i++)
                 {
-                    GameObject sliceObj = Instantiate(slicePrefab);
+                    string slicePoolTag = "PizzaSlice_" + type;
+                    GameObject sliceObj;
+                    if (ObjectPooler.Instance != null)
+                    {
+                        sliceObj = ObjectPooler.Instance.SpawnFromPool(slicePoolTag, slicePrefab, Vector3.zero, Quaternion.identity);
+                    }
+                    else
+                    {
+                        sliceObj = Instantiate(slicePrefab);
+                    }
+
                     PizzaSlice sliceScript = sliceObj.GetComponent<PizzaSlice>();
                     if (sliceScript == null) sliceScript = sliceObj.AddComponent<PizzaSlice>();
                     

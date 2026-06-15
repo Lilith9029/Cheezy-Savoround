@@ -13,6 +13,8 @@ public class PizzaPlate : MonoBehaviour
     /// <summary>True while ClearPlate() is in progress. MergeManager must skip these plates.</summary>
     public bool IsBeingCleared { get; private set; } = false;
 
+    public static event System.Action<PizzaPlate> OnPlateCleared;
+
     public int SliceCount => currentSlices.Count;
     public bool IsFull => currentSlices.Count >= 6;
 
@@ -85,40 +87,112 @@ public class PizzaPlate : MonoBehaviour
         return types;
     }
 
-    public void ClearPlate()
+    public int GetUniqueTypesCount()
     {
-        // Guard: prevent double-clear
+        int count = 0;
+        for (int i = 0; i < currentSlices.Count; i++)
+        {
+            string type = currentSlices[i].sliceType;
+            bool duplicate = false;
+            for (int j = 0; j < i; j++)
+            {
+                if (currentSlices[j].sliceType == type)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int GetUniqueTypesNonAlloc(string[] results)
+    {
+        if (results == null) return 0;
+        int count = 0;
+        for (int i = 0; i < currentSlices.Count; i++)
+        {
+            string type = currentSlices[i].sliceType;
+            bool duplicate = false;
+            for (int j = 0; j < count; j++)
+            {
+                if (results[j] == type)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate)
+            {
+                if (count < results.Length)
+                {
+                    results[count] = type;
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    public void ClearPlate(bool fromMerge = false)
+    {
         if (IsBeingCleared) return;
         IsBeingCleared = true;
 
-        // ── Free the Cell IMMEDIATELY so FindBestMove() skips this spot ──
         Cell cell = GetComponentInParent<Cell>();
         if (cell != null) cell.currentPlate = null;
 
-        // Spawn explosion and score popup from ObjectPooler
         if (ObjectPooler.Instance != null)
         {
             ObjectPooler.Instance.SpawnFromPool("PizzaExplosion", transform.position, Quaternion.identity);
-            ObjectPooler.Instance.SpawnFromPool("ScorePopup", transform.position + Vector3.up * 0.6f, Quaternion.identity);
+
+            // Chỉ spawn popup nếu là merge thật
+            if (fromMerge)
+            {
+                GameObject popupObj = ObjectPooler.Instance.SpawnFromPool(
+                    "ScorePopup",
+                    transform.position + Vector3.up * 0.6f,
+                    Quaternion.Euler(90f, 0f, 0f)
+                );
+                if (popupObj != null)
+                {
+                    ScorePopup popup = popupObj.GetComponent<ScorePopup>();
+                    if (popup != null) popup.Show(100, transform.position + Vector3.up * 0.6f);
+                }
+            }
         }
 
-        // Play sound with pitch shift combo feel
         if (ComboAudioPlayer.Instance != null)
-        {
             ComboAudioPlayer.Instance.PlayExplosionWithCombo();
-        }
 
-        // Add score and gold to GameManager
+        if (fromMerge && ComboAudioPlayer.Instance != null)
+            ComboAudioPlayer.Instance.PlayExplosionWithCombo();
+
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.AddScore(60); // 10 points per slice
-            GameManager.Instance.AddGold(5);   // 5 gold per plate
+            if (fromMerge)
+            {
+                GameManager.Instance.AddScore(100);
+                GameManager.Instance.AddGold(5);
+            }
         }
 
-        foreach (var s in currentSlices) if (s != null) Destroy(s.gameObject);
+        OnPlateCleared?.Invoke(this);
+
+        foreach (var s in currentSlices)
+        {
+            if (s != null)
+            {
+                if (ObjectPooler.Instance != null) s.gameObject.SetActive(false);
+                else Destroy(s.gameObject);
+            }
+        }
         currentSlices.Clear();
 
-        // Destroy the plate itself after a short visual delay
         Destroy(gameObject, 0.3f);
     }
 
@@ -209,7 +283,6 @@ public class PizzaPlate : MonoBehaviour
         foreach (var slot in sliceSlots) if(slot != null) DestroyImmediate(slot.gameObject);
 
         sliceSlots = new Transform[6];
-        float radius = 0.4f;
         for (int i = 0; i < 6; i++)
         {
             GameObject slotObj = new GameObject($"Slot_{i}");
@@ -220,6 +293,28 @@ public class PizzaPlate : MonoBehaviour
             slotObj.transform.localRotation = Quaternion.Euler(0, -i * 60f, 0);
             
             sliceSlots[i] = slotObj.transform;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (currentSlices != null)
+        {
+            foreach (var s in currentSlices)
+            {
+                if (s != null)
+                {
+                    if (ObjectPooler.Instance != null)
+                    {
+                        s.gameObject.SetActive(false); // Safely return to pool
+                    }
+                    else
+                    {
+                        Destroy(s.gameObject);
+                    }
+                }
+            }
+            currentSlices.Clear();
         }
     }
 }

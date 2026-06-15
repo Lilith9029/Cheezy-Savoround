@@ -1,0 +1,21 @@
+{
+  "coinPacks": [
+    { "id": "pack_1000", "name": "1,000 Coins", "goldAmount": 1000, "priceLabel": "$1.99", "iconKey": "coin_57" },
+    { "id": "pack_5000", "name": "5,000 Coins", "goldAmount": 5000, "priceLabel": "$7.99", "iconKey": "coin_58" },
+    { "id": "pack_25000", "name": "25,000 Coins", "goldAmount": 25000, "priceLabel": "$29.99", "iconKey": "coin_59" },
+    { "id": "pack_50000", "name": "50,000 Coins", "goldAmount": 50000, "priceLabel": "$49.99", "iconKey": "coin_60" }
+  ],
+  "skins": [
+    { "id": "default", "name": "Default Plate", "cost": 0, "colorHex": "#FFFFFF", "metallic": 0.1, "smoothness": 0.5 },
+    { "id": "wood", "name": "Wood Plate", "cost": 150, "colorHex": "#8B5A2B", "metallic": 0.0, "smoothness": 0.2 },
+    { "id": "stone", "name": "Stone Plate", "cost": 150, "colorHex": "#808080", "metallic": 0.0, "smoothness": 0.2 },
+    { "id": "fancy", "name": "Royal Plate", "cost": 400, "colorHex": "#7B2FBE", "metallic": 0.1, "smoothness": 0.8 },
+    { "id": "golden", "name": "Golden Plate", "cost": 500, "colorHex": "#FFD700", "metallic": 0.9, "smoothness": 0.9 }
+  ],
+  "boosters": [
+    { "id": "cutter", "name": "Cutter", "cost": 150, "iconKey": "booster_48" },
+    { "id": "sauce", "name": "Sauce", "cost": 150, "iconKey": "booster_49" },
+    { "id": "trash", "name": "Trash", "cost": 200, "iconKey": "booster_50" },
+    { "id": "board", "name": "Board", "cost": 250, "iconKey": "booster_51" }
+  ]
+}

@@ -3,7 +3,15 @@ using UnityEngine;
 public class GridManager : MonoBehaviour
 {
     [SerializeField] private string configFileName = "GridConfig";
-    
+
+    [Header("Grid Tile Visuals")]
+    [Tooltip("First tile prefab (checkerboard pattern A)")]
+    [SerializeField] private GameObject tilePrefabA;
+    [Tooltip("Second tile prefab (checkerboard pattern B)")]
+    [SerializeField] private GameObject tilePrefabB;
+    [Tooltip("Y offset of tile relative to cell center")]
+    [SerializeField] private float tileYOffset = 0f;
+
     private void Start()
     {
         InitializeGrid();
@@ -15,14 +23,12 @@ public class GridManager : MonoBehaviour
         TextAsset configAsset = Resources.Load<TextAsset>(configFileName);
         if (configAsset == null)
         {
-            Debug.LogError($"Could not find configuration file: {configFileName} in Resources");
             return;
         }
 
         GridData data = JsonUtility.FromJson<GridData>(configAsset.text);
         if (data == null)
         {
-            Debug.LogError("Failed to parse GridData from JSON.");
             return;
         }
 
@@ -30,10 +36,14 @@ public class GridManager : MonoBehaviour
     }
 
     private Cell[,] gridCells;
+    private Cell[] flatCells;
+
+    public Cell[] AllCells => flatCells;
 
     private void GenerateGrid(GridData data)
     {
         gridCells = new Cell[data.width, data.height];
+        System.Collections.Generic.List<Cell> cellList = new System.Collections.Generic.List<Cell>();
         
         // Center the grid
         Vector3 offset = new Vector3(
@@ -62,11 +72,55 @@ public class GridManager : MonoBehaviour
                 Cell cell = cellObj.AddComponent<Cell>();
                 cell.Initialize(x, z);
                 gridCells[x, z] = cell;
-                
+                cellList.Add(cell);
+
                 // Set Layer for Raycasting (Layer 6: Grid)
-                cellObj.layer = 6; 
+                cellObj.layer = 6;
+
+                // Spawn checkerboard tile at cell center
+                SpawnTile(cell, localPos, x, z);
             }
         }
+        flatCells = cellList.ToArray();
+
+        // Pre-populate neighbors for all cells to achieve zero allocation lookups
+        for (int x = 0; x < data.width; x++)
+        {
+            for (int z = 0; z < data.height; z++)
+            {
+                Cell cell = gridCells[x, z];
+                if (cell != null)
+                {
+                    cell.neighbors.Clear();
+                    int[,] dirs = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Cell neighbor = GetCell(x + dirs[i, 0], z + dirs[i, 1]);
+                        if (neighbor != null)
+                        {
+                            cell.neighbors.Add(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void SpawnTile(Cell cell, Vector3 localPos, int x, int z)
+    {
+        // Pick prefab based on checkerboard pattern
+        bool isA = (x + z) % 2 == 0;
+        GameObject prefab = isA ? tilePrefabA : tilePrefabB;
+
+        if (prefab == null) return;
+
+        Vector3 tilePos = localPos + new Vector3(0f, tileYOffset, 0f);
+        GameObject tile = Instantiate(prefab, Vector3.zero, prefab.transform.rotation, this.transform);
+        tile.transform.localPosition = tilePos;
+        tile.name = $"Tile_{x}_{z}";
+
+        // Register tile into Cell so it can be lifted/reset by GhostPlatePreview
+        cell.RegisterTile(tile);
     }
 
     private void OnDrawGizmos()
@@ -121,27 +175,19 @@ public class GridManager : MonoBehaviour
 
     public Cell GetCell(int x, int z)
     {
-        if (x >= 0 && x < gridCells.GetLength(0) && z >= 0 && z < gridCells.GetLength(1))
+        if (gridCells != null && x >= 0 && x < gridCells.GetLength(0) && z >= 0 && z < gridCells.GetLength(1))
         {
             return gridCells[x, z];
         }
         return null;
     }
 
+    private static readonly System.Collections.Generic.List<Cell> _emptyNeighbors = new System.Collections.Generic.List<Cell>();
+
     public System.Collections.Generic.List<Cell> GetNeighbors(int x, int z)
     {
-        System.Collections.Generic.List<Cell> neighbors = new System.Collections.Generic.List<Cell>();
-        int[,] dirs = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } };
-
-        for (int i = 0; i < 4; i++)
-        {
-            Cell neighbor = GetCell(x + dirs[i, 0], z + dirs[i, 1]);
-            if (neighbor != null)
-            {
-                neighbors.Add(neighbor);
-            }
-        }
-        return neighbors;
+        Cell cell = GetCell(x, z);
+        return cell != null ? cell.neighbors : _emptyNeighbors;
     }
 
     public System.Collections.Generic.List<Cell> GetMatchingNeighbors(int x, int z, string type)
@@ -160,28 +206,48 @@ public class GridManager : MonoBehaviour
         }
         return matches;
     }
+
     public Cell GetNearestCell(Vector3 worldPos, float maxDistance)
     {
         Cell nearest = null;
         float bestDist = maxDistance;
 
-        foreach (Cell cell in gridCells)
+        if (flatCells != null)
         {
-            if (cell == null) continue;
-
-            // Compare on XZ plane only (ignore Y)
-            float dist = Vector2.Distance(
-                new Vector2(worldPos.x, worldPos.z),
-                new Vector2(cell.transform.position.x, cell.transform.position.z)
-            );
-
-            if (dist < bestDist)
+            foreach (Cell cell in flatCells)
             {
-                bestDist = dist;
-                nearest = cell;
+                if (cell == null) continue;
+
+                // Compare on XZ plane only (ignore Y)
+                float dist = Vector2.Distance(
+                    new Vector2(worldPos.x, worldPos.z),
+                    new Vector2(cell.transform.position.x, cell.transform.position.z)
+                );
+
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    nearest = cell;
+                }
             }
         }
 
         return nearest;
+    }
+
+    /// <summary>
+    /// Destroys all active pizza plates on the grid.
+    /// </summary>
+    public void ClearAllPlates()
+    {
+        if (gridCells == null) return;
+        foreach (Cell cell in gridCells)
+        {
+            if (cell != null && cell.IsOccupied)
+            {
+                Destroy(cell.currentPlate);
+                cell.currentPlate = null;
+            }
+        }
     }
 }
