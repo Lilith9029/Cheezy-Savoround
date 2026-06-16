@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -31,6 +31,8 @@ public class UserSaveData
     public List<BoosterSaveData> boosters = new List<BoosterSaveData>();
 }
 
+// UserDataManager must load save data BEFORE AchievementManager (-5) and UIManager subscribe
+[DefaultExecutionOrder(-10)]
 public class UserDataManager : MonoBehaviour
 {
     [ContextMenu("DEBUG - Clear All Save Data")]
@@ -155,7 +157,6 @@ public class UserDataManager : MonoBehaviour
     {
         try
         {
-            SaveSessionTime();
             string json = JsonUtility.ToJson(_data, true);
             File.WriteAllText(_savePath, json);
             OnDataSaved?.Invoke();
@@ -168,6 +169,8 @@ public class UserDataManager : MonoBehaviour
 
     private void InitializeDefaultData()
     {
+        // Achievement list is intentionally empty here — AchievementManager.EnsureSaveDataForAll()
+        // will populate it from achievements.json after both managers have initialised.
         _data = new UserSaveData
         {
             gold = 50, // Starting gold
@@ -175,12 +178,8 @@ public class UserDataManager : MonoBehaviour
             equippedSkin = "default",
             lastClaimedTimeUTC = "",
             lastSessionTimeUTC = DateTime.UtcNow.ToString("o"),
-            achievements = new List<AchievementSaveData>
-            {
-                new AchievementSaveData { id = "bloom_pizzas", currentProgress = 0, isUnlocked = false },
-                new AchievementSaveData { id = "earn_gold", currentProgress = 0, isUnlocked = false },
-                new AchievementSaveData { id = "max_combo", currentProgress = 0, isUnlocked = false }
-            }
+            achievements = new List<AchievementSaveData>(),
+            boosters = new List<BoosterSaveData>()
         };
     }
 

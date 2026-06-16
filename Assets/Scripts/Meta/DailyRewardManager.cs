@@ -65,7 +65,8 @@ public class DailyRewardManager : MonoBehaviour
 
     public static event Action OnRewardStatusUpdated;
 
-    private DailyRewardState _currentState = DailyRewardState.Cooldown;
+    // Start in OfflineChecking so UI shows a loading state until the first status check completes.
+    private DailyRewardState _currentState = DailyRewardState.OfflineChecking;
     private TimeSpan _cooldownRemaining = TimeSpan.Zero;
     private bool _isChecking = false;
 
@@ -115,6 +116,11 @@ public class DailyRewardManager : MonoBehaviour
 
     private void Start()
     {
+        if (UserDataManager.Instance != null)
+        {
+            UserDataManager.Instance.SetLastSessionTime(DateTime.UtcNow.ToString("o"));
+        }
+
         StartCoroutine(CheckStatusRoutine());
     }
 
@@ -138,11 +144,22 @@ public class DailyRewardManager : MonoBehaviour
         {
             StartCoroutine(CheckStatusRoutine());
         }
+        else
+        {
+            // Already checking in background — broadcast current state so any
+            // newly-opened UI panel renders the OfflineChecking indicator immediately.
+            OnRewardStatusUpdated?.Invoke();
+        }
     }
 
     private IEnumerator CheckStatusRoutine()
     {
         _isChecking = true;
+
+        // Broadcast immediately so UI can show a "Checking..." state
+        // instead of rendering stale Cooldown default.
+        _currentState = DailyRewardState.OfflineChecking;
+        OnRewardStatusUpdated?.Invoke();
 
         // Try to fetch secure time online
         using (UnityWebRequest webRequest = UnityWebRequest.Get(timeApiUrl))
@@ -215,12 +232,16 @@ public class DailyRewardManager : MonoBehaviour
 
         DateTime currentLocalUtc = DateTime.UtcNow;
 
-        // Check for clock rollback (anti-cheat)
-        if (!string.IsNullOrEmpty(UserDataManager.Instance.LastSessionTimeUTC))
+        // === FIX: Chỉ check anti-cheat nếu LastClaimedTimeUTC có giá trị ===
+        // Build mới hoàn toàn (chưa claim lần nào) → bỏ qua anti-cheat
+        bool hasEverClaimed = !string.IsNullOrEmpty(UserDataManager.Instance.LastClaimedTimeUTC);
+
+        if (hasEverClaimed && !string.IsNullOrEmpty(UserDataManager.Instance.LastSessionTimeUTC))
         {
             if (DateTime.TryParse(UserDataManager.Instance.LastSessionTimeUTC, out DateTime lastSessionTime))
             {
-                if (currentLocalUtc < lastSessionTime)
+                // === FIX: Cho phép sai lệch tối đa 60 giây để tránh false positive ===
+                if (currentLocalUtc < lastSessionTime.AddSeconds(-60))
                 {
                     _currentState = DailyRewardState.CheatingDetected;
                     _cooldownRemaining = TimeSpan.Zero;
@@ -231,10 +252,8 @@ public class DailyRewardManager : MonoBehaviour
 
         // Check last claimed time
         DateTime lastClaimedTime = DateTime.MinValue;
-        if (!string.IsNullOrEmpty(UserDataManager.Instance.LastClaimedTimeUTC))
+        if (hasEverClaimed)
         {
-            // The value might be a unix timestamp (from online check) or an ISO string.
-            // Let's handle both!
             if (long.TryParse(UserDataManager.Instance.LastClaimedTimeUTC, out long lastClaimedUnix))
             {
                 lastClaimedTime = DateTimeOffset.FromUnixTimeSeconds(lastClaimedUnix).UtcDateTime;
@@ -245,6 +264,14 @@ public class DailyRewardManager : MonoBehaviour
             }
         }
 
+        // === FIX: Nếu chưa claim lần nào → ReadyToClaim ngay ===
+        if (!hasEverClaimed)
+        {
+            _currentState = DailyRewardState.ReadyToClaim;
+            _cooldownRemaining = TimeSpan.Zero;
+            return;
+        }
+
         TimeSpan elapsed = currentLocalUtc - lastClaimedTime;
         TimeSpan cooldown = TimeSpan.FromHours(24);
 
@@ -253,8 +280,7 @@ public class DailyRewardManager : MonoBehaviour
             _currentState = DailyRewardState.ReadyToClaim;
             _cooldownRemaining = TimeSpan.Zero;
 
-            // Reset index if we finished the 7-day cycle
-            if (UserDataManager.Instance != null && UserDataManager.Instance.DailyRewardIndex >= rewards.Count)
+            if (UserDataManager.Instance.DailyRewardIndex >= rewards.Count)
             {
                 UserDataManager.Instance.SetDailyRewardIndex(0);
             }

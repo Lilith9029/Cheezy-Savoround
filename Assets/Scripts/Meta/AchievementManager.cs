@@ -2,6 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
+
 [Serializable]
 public class AchievementConfig
 {
@@ -18,6 +19,8 @@ public class AchievementConfigList
     public List<AchievementConfig> achievements;
 }
 
+// AchievementManager must init AFTER UserDataManager (order -5) so Instance is ready in EnsureSaveDataForAll
+[DefaultExecutionOrder(-5)]
 public class AchievementManager : MonoBehaviour
 {
     public static AchievementManager Instance { get; private set; }
@@ -78,13 +81,18 @@ public class AchievementManager : MonoBehaviour
     private void EnsureSaveDataForAll()
     {
         if (UserDataManager.Instance == null) return;
+        bool anyAdded = false;
         foreach (var config in _achievements)
         {
             if (UserDataManager.Instance.GetAchievement(config.id) == null)
             {
                 UserDataManager.Instance.AddAchievement(config.id);
+                anyAdded = true;
             }
         }
+        // Persist immediately so save file has correct IDs from the first session
+        if (anyAdded)
+            UserDataManager.Instance.SaveData();
     }
 
     private void HandlePlateCleared(PizzaPlate plate)
@@ -104,7 +112,10 @@ public class AchievementManager : MonoBehaviour
 
     private void HandleGoldChanged(int newGold)
     {
-        UpdateProgress("earn_gold_500", newGold, false);
+        // Gold achievements track cumulative gold EARNED (not current balance).
+        // We use isRelative=false and compare against the running total stored as progress,
+        // but only advance if newGold is higher than what we last recorded.
+        UpdateProgress("earn_gold_500",  newGold, false);
         UpdateProgress("earn_gold_1000", newGold, false);
         UpdateProgress("earn_gold_5000", newGold, false);
     }

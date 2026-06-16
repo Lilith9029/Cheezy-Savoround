@@ -36,11 +36,13 @@ public class DailyRewardUI : MonoBehaviour
 
     private void OnEnable()
     {
+        _lastSeconds = -1;
+        // Trigger a fresh status check. CheckStatusRoutine() will immediately
+        // broadcast OfflineChecking → RefreshUI() so we don't need a manual call here.
         if (DailyRewardManager.Instance != null)
             DailyRewardManager.Instance.RefreshStatus();
-
-        _lastSeconds = -1;
-        RefreshUI();
+        else
+            RefreshUI(); // fallback if manager not ready yet
     }
 
     private void Update()
@@ -85,6 +87,12 @@ public class DailyRewardUI : MonoBehaviour
         // 2. Cập nhật trạng thái nút và text
         switch (DailyRewardManager.Instance.CurrentState)
         {
+            case DailyRewardState.OfflineChecking:
+                if (statusText != null) statusText.text = "ĐANG KIỂM TRA...";
+                if (infoLabel != null) infoLabel.text = "Đang xác minh thời gian, vui lòng chờ...";
+                if (claimButton != null) claimButton.interactable = false;
+                break;
+
             case DailyRewardState.ReadyToClaim:
                 if (statusText != null) statusText.text = "READY TO CLAIM!";
                 if (infoLabel != null) infoLabel.text = "Claim your daily rewards to accumulate gold and boosters!";
